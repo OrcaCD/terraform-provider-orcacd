@@ -11,15 +11,47 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
+      - run: go mod verify
       - run: go test -race ./...
       - run: go vet ./...
-      - run: go build ./...
       - name: Check generated client
         run: |
           go generate ./internal/api
           git diff --exit-code -- internal/api/client_gen.go
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.17.2
+          terraform_wrapper: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.13.9
+          tofu_wrapper: false
+      - name: Validate the quickstart on Terraform and OpenTofu
+        run: |
+          terraform fmt -check -recursive
+          provider_dir="${RUNNER_TEMP}/orcacd-provider"
+          cli_config="${RUNNER_TEMP}/orcacd-dev.tfrc"
+          mkdir -p "$provider_dir"
+          go build -o "$provider_dir/terraform-provider-orcacd" .
+          cat > "$cli_config" <<EOF_CONFIG
+          provider_installation {
+            dev_overrides {
+              "registry.terraform.io/orcacd/orcacd" = "$provider_dir"
+              "registry.opentofu.org/orcacd/orcacd"  = "$provider_dir"
+            }
+            direct {}
+          }
+          EOF_CONFIG
+          export TF_CLI_CONFIG_FILE="$cli_config"
+          terraform -chdir=examples/quickstart validate -no-color
+          tofu -chdir=examples/quickstart validate -no-color
+      - name: Validate the registry documentation
+        run: go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@v0.25.0 validate --provider-name orcacd

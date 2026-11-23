@@ -4,19 +4,28 @@ on:
   push:
     tags: ['v[0-9]*']
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.release-commit.outputs.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
+      - name: Identify the tagged commit
+        id: release-commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
+          cache: false
       - run: go test ./...
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0
         id: signing-key
@@ -30,3 +39,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.signing-key.outputs.fingerprint }}
+
+  finish-release:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Clear the pending release label
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ needs.release.outputs.commit }}
+        run: |
+          pending=$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$RELEASE_COMMIT/pulls" \
+            | jq -r --arg commit "$RELEASE_COMMIT" '
+              .[] | select(.merged_at and .merge_commit_sha == $commit
+                and any(.labels[]?; .name == "autorelease: pending")) | .number
+            ')
+          while IFS= read -r pr; do
+            if [ -n "$pr" ]; then
+              gh api --method DELETE --silent "repos/$GITHUB_REPOSITORY/issues/$pr/labels/autorelease%3A%20pending"
+            fi
+          done <<< "$pending"

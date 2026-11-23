@@ -5,7 +5,7 @@ description: "Manage resources on an OrcaCD hub."
 
 # OrcaCD Provider
 
-Use the OrcaCD provider to manage Git repositories, applications, notification subscriptions, and agents.
+Use the OrcaCD provider to manage Git repositories, applications, notification subscriptions, and agents. For setup, authentication, and import examples, see the [OrcaCD Terraform and OpenTofu guide](https://orcacd.dev/docs/guides/terraform).
 
 ```hcl
 terraform {

@@ -1,0 +1,66 @@
+name: Tag Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    if: >-
+      github.event.pull_request.merged &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'release-please--branches--main' &&
+      contains(github.event.pull_request.labels.*.name, 'autorelease: pending')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Checkout the release PR merge commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Push the release tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          if [[ "$PR_AUTHOR" != "${APP_SLUG}[bot]" ]]; then
+            echo "The release PR must come from the OrcaCD GitHub App." >&2
+            exit 1
+          fi
+
+          version=$(jq -er '."." | strings' .github/release-please-manifest.json)
+          previous_version=$(git show HEAD^:.github/release-please-manifest.json | jq -er '."." | strings')
+          if [[ "$version" == "$previous_version" || ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "The release PR must set a new version in the Release Please manifest." >&2
+            exit 1
+          fi
+
+          tag="v$version"
+          commit=$(git rev-parse HEAD)
+          if tagged_commit=$(git rev-parse --verify --quiet "refs/tags/$tag^{commit}"); then
+            if [[ "$tagged_commit" == "$commit" ]]; then
+              echo "$tag already points to the release commit."
+              exit 0
+            fi
+            echo "$tag already points to a different commit." >&2
+            exit 1
+          fi
+
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+            push origin "$commit:refs/tags/$tag"
