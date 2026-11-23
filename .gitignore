@@ -1,0 +1,11 @@
+/bin/
+/dist/
+/terraform-provider-orcacd
+/terraform-provider-orcacd.exe
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+.terraform.tfstate.lock.info

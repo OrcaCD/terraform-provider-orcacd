@@ -1,0 +1,26 @@
+package: api
+output: client_gen.go
+generate:
+  models: true
+  client: true
+output-options:
+  include-operation-ids:
+    - create-agent
+    - get-agent
+    - list-agents
+    - update-agent
+    - delete-agent
+    - create-application
+    - get-application
+    - list-applications
+    - update-application
+    - delete-application
+    - create-notification
+    - list-notifications
+    - update-notification
+    - delete-notification
+    - create-repository
+    - get-repository
+    - list-repositories
+    - update-repository
+    - delete-repository
